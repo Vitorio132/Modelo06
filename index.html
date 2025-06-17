@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chamadas - IACAS</title>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f2f2f2;
+  }
+  #login, #selection, #chamada {
+    max-width: 600px;
+    margin: 30px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+  }
+  h2 {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  input, select, button {
+    width: 100%;
+    padding: 10px;
+    margin: 6px 0;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+  button {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  button:hover {
+    background-color: #45a049;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+  }
+  th {
+    background-color: #f2f2f2;
+  }
+  .nomeAluno {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .nomeAluno span {
+    margin-right: 6px;
+  }
+  .editIcon {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    fill: #555;
+    transition: fill 0.2s;
+  }
+  .editIcon:hover {
+    fill: #4caf50;
+  }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Login do Professor</h2>
+  <input id="username" placeholder="Usuário" />
+  <input id="password" placeholder="Senha" type="password" />
+  <button onclick="login()">Entrar</button>
+</div>
+
+<div id="selection" style="display:none;">
+  <h2>Selecionar Escola e Turma</h2>
+  <select id="escola" onchange="loadTurmas()">
+    <option value="">Selecione a escola</option>
+    <option value="CMEI Padre Luís Ruas">CMEI Padre Luís Ruas</option>
+    <option value="Escola Municipal Nova Vida">Escola Municipal Nova Vida</option>
+    <option value="Escola Estadual Santo Antônio">Escola Estadual Santo Antônio</option>
+    <option value="Adolescentes - Vila da Felicidade">Adolescentes - Vila da Felicidade</option>
+    <option value="Crianças - Vila da Felicidade">Crianças - Vila da Felicidade</option>
+    <option value="Escola Estadual Liberalina Weil">Escola Estadual Liberalina Weil</option>
+  </select>
+  <select id="turma">
+    <option value="">Selecione a turma</option>
+  </select>
+  <input type="date" id="dataChamada" />
+  <button onclick="abrirChamada()">Abrir Chamada</button>
+</div>
+
+<div id="chamada" style="display:none;">
+  <h2>Chamada - <span id="escolaSelecionada"></span> / <span id="turmaSelecionada"></span></h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Presente</th>
+        <th>Falta</th>
+        <th>Ausente Justificado</th>
+      </tr>
+    </thead>
+    <tbody id="tabelaAlunos"></tbody>
+  </table>
+  <button onclick="salvarChamada()">Salvar Chamada</button>
+  <button onclick="voltarParaSelecao()">Voltar</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBwBiziQg4q9jOP0vT9Vg11j1yVzoX72gI",
+    authDomain: "frequencia-escolas-iacas.firebaseapp.com",
+    databaseURL: "https://frequencia-escolas-iacas-default-rtdb.firebaseio.com",
+    projectId: "frequencia-escolas-iacas",
+    storageBucket: "frequencia-escolas-iacas.appspot.com",
+    messagingSenderId: "259315364059",
+    appId: "1:259315364059:web:ddc66a60f18c563cc41cfe"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const professores = {
+    Izys: "iacas1234",
+    Vitorio: "iacas123",
+    Nayara: "nayara",
+    Karina: "8770220"
+  };
+
+  const turmasPorEscola = {
+    "CMEI Padre Luís Ruas": ["2° P-B", "2° P-G", "2° P-J", "1° P-F"],
+    "Escola Municipal Nova Vida": ["Turma 1"],
+    "Escola Estadual Santo Antônio": ["Matutino"],
+    "Adolescentes - Vila da Felicidade": ["Matutino", "Vespertino"],
+    "Crianças - Vila da Felicidade": ["Turma 3 (Vespertino 1)", "Turma 4 (Vespertino 2)"],
+    "Escola Estadual Liberalina Weil": ["7° Ano 01", "7° Ano 02", "8° Ano 01"]
+  };
+
+  let alunos = [];
+  let escolaAtual = "";
+  let turmaAtual = "";
+
+  function login() {
+    const user = document.getElementById("username").value;
+    const pass = document.getElementById("password").value;
+    if (professores[user] && professores[user] === pass) {
+      document.getElementById("login").style.display = "none";
+      document.getElementById("selection").style.display = "block";
+    } else {
+      alert("Login inválido!");
+    }
+  }
+
+  function loadTurmas() {
+    const escola = document.getElementById("escola").value;
+    const turmaSelect = document.getElementById("turma");
+    turmaSelect.innerHTML = '<option value="">Selecione a turma</option>';
+    if (turmasPorEscola[escola]) {
+      turmasPorEscola[escola].forEach((turma) => {
+        const opt = document.createElement("option");
+        opt.value = turma;
+        opt.innerText = turma;
+        turmaSelect.appendChild(opt);
+      });
+    }
+  }
+
+  function gerarAlunosFixos() {
+    const lista = [];
+    for (let i = 1; i <= 35; i++) {
+      lista.push({
+        nome: `Aluno ${i}`,
+        presente: false,
+        falta: false,
+        ausente: false
+      });
+    }
+    return lista;
+  }
+
+  function abrirChamada() {
+    escolaAtual = document.getElementById("escola").value;
+    turmaAtual = document.getElementById("turma").value;
+    const dataSelecionada = document.getElementById("dataChamada").value;
+
+    if (!escolaAtual || !turmaAtual || !dataSelecionada) {
+      alert("Selecione escola, turma e data!");
+      return;
+    }
+
+    document.getElementById("selection").style.display = "none";
+    document.getElementById("chamada").style.display = "block";
+    document.getElementById("escolaSelecionada").innerText = escolaAtual;
+    document.getElementById("turmaSelecionada").innerText = turmaAtual;
+
+    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
+
+    ref.once("value").then((snapshot) => {
+      if (snapshot.exists()) {
+        alunos = snapshot.val();
+      } else {
+        alunos = gerarAlunosFixos();
+        ref.set(alunos);
+      }
+      renderTabela();
+    });
+  }
+
+  function renderTabela() {
+    const tbody = document.getElementById("tabelaAlunos");
+    tbody.innerHTML = "";
+    alunos.forEach((aluno, index) => {
+      tbody.innerHTML += `
+        <tr>
+          <td class="nomeAluno">
+            <span>${aluno.nome}</span>
+            <svg class="editIcon" onclick="editarNome(${index})" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34a1.25 1.25 0 000-1.77l-2-2a1.25 1.25 0 00-1.77 0l-1.83 1.83 3.75 3.75 1.85-1.81z"/>
+            </svg>
+          </td>
+          <td><input type="checkbox" onchange="marcar(${index}, 'presente')" ${aluno.presente ? "checked" : ""}></td>
+          <td><input type="checkbox" onchange="marcar(${index}, 'falta')" ${aluno.falta ? "checked" : ""}></td>
+          <td><input type="checkbox" onchange="marcar(${index}, 'ausente')" ${aluno.ausente ? "checked" : ""}></td>
+        </tr>
+      `;
+    });
+  }
+
+  function marcar(index, tipo) {
+    alunos.forEach((aluno, i) => {
+      if (i === index) {
+        aluno.presente = tipo === "presente" ? !aluno.presente : false;
+        aluno.falta = tipo === "falta" ? !aluno.falta : false;
+        aluno.ausente = tipo === "ausente" ? !aluno.ausente : false;
+      }
+    });
+    renderTabela();
+  }
+
+  function editarNome(index) {
+    const nomeAtual = alunos[index].nome;
+    const novoNome = prompt("Editar nome do aluno:", nomeAtual);
+    if (novoNome === null) return; // Cancelado
+    if (!novoNome.trim()) {
+      alert("O nome não pode ficar vazio!");
+      return;
+    }
+    const nomeAntigo = alunos[index].nome;
+    alunos[index].nome = novoNome.trim();
+    renderTabela();
+
+    const dataSelecionada = document.getElementById("dataChamada").value;
+    const refAtual = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
+    refAtual.set(alunos);
+
+    // Atualiza para datas futuras
+    const refTurma = db.ref(`chamada/${escolaAtual}/${turmaAtual}`);
+    refTurma.once("value").then(snapshot => {
+      const datasFuturas = [];
+      snapshot.forEach(childSnap => {
+        const data = childSnap.key;
+        if (data > dataSelecionada) {
+          datasFuturas.push(data);
+        }
+      });
+      datasFuturas.forEach(data => {
+        const refData = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${data}`);
+        refData.once("value").then(snapshotData => {
+          if (snapshotData.exists()) {
+            const alunosData = snapshotData.val();
+            alunosData.forEach(alunoData => {
+              if (alunoData.nome === nomeAntigo) {
+                alunoData.nome = novoNome.trim();
+              }
+            });
+            refData.set(alunosData);
+          }
+        });
+      });
+    });
+  }
+
+  function salvarChamada() {
+    const dataSelecionada = document.getElementById("dataChamada").value;
+    if (!dataSelecionada) {
+      alert("Selecione uma data para salvar a chamada!");
+      return;
+    }
+    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
+    ref.set(alunos)
+      .then(() => alert("Chamada salva com sucesso!"))
+      .catch(() => alert("Erro ao salvar a chamada."));
+  }
+
+  function voltarParaSelecao() {
+    document.getElementById("chamada").style.display = "none";
+    document.getElementById("selection").style.display = "block";
+  }
+</script>
+
+</body>
+</html>
