@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sistema de Presença - IACAS</title>
+
+  <style>
+    body {
+        background: linear-gradient(120deg, #f0f4f8, #d9e2ec);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 0;
+    }
+
+    .container {
+        max-width: 700px;
+        margin: 50px auto;
+        background: #ffffff;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+        text-align: center;
+        color: #333;
+    }
+
+    input, select, button {
+        width: 100%;
+        margin: 8px 0;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+    }
+
+    button {
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
+
+    button:hover {
+        background-color: #45a049;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+
+    table th, table td {
+        padding: 10px;
+        text-align: center;
+        border-bottom: 1px solid #ddd;
+    }
+
+    table th {
+        background-color: #f7fafc;
+        color: #555;
+    }
+
+    tr:hover {
+        background-color: #f1f1f1;
+    }
+
+    .action-buttons button {
+        margin-top: 10px;
+    }
+  </style>
+
+  
+</head>
+<body>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- Exportar Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<div id="login" class="container">
+    <h2>Login do Professor</h2>
+    <input type="text" id="username" placeholder="Usuário">
+    <input type="password" id="password" placeholder="Senha">
+    <button onclick="login()">Entrar</button>
+</div>
+
+<div id="selection" class="container" style="display:none;">
+    <h2>Selecionar Escola e Turma</h2>
+    <select id="escola" onchange="loadTurmas()">
+        <option value="">Selecione a escola</option>
+        <option value="CMEI Padre Luís Ruas">CMEI Padre Luís Ruas</option>
+        <option value="Escola Municipal Nova Vida">Escola Municipal Nova Vida</option>
+        <option value="Escola Municipal Liberalina Weill">Escola Municipal Liberalina Weill</option>
+        <option value="Escola Estadual Santo Antônio">Escola Estadual Santo Antônio</option>
+        <option value="Adolescentes - Vila da Felicidade">Adolescentes - Vila da Felicidade</option>
+        <option value="Crianças - Vila da Felicidade">Crianças - Vila da Felicidade</option>
+    </select>
+
+    <select id="turma">
+        <option value="">Selecione a turma</option>
+    </select>
+
+    <label>Data da chamada:</label>
+    <input type="date" id="dataChamada">
+    <button onclick="abrirChamada()">Abrir Chamada</button>
+</div>
+
+<div id="chamada" class="container" style="display:none;">
+    <h2>Chamada - <span id="escolaSelecionada"></span> / <span id="turmaSelecionada"></span></h2>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Nome</th>
+            <th>Presente</th>
+            <th>Falta</th>
+            <th>Ausente Justificado</th>
+        </tr>
+        </thead>
+        <tbody id="tabelaAlunos"></tbody>
+    </table>
+
+    <div class="action-buttons">
+        <button onclick="salvarChamada()">Salvar Chamada</button>
+        <button onclick="exportarExcel()">Exportar para Excel</button>
+        <button onclick="voltarParaSelecao()">Voltar</button>
+    </div>
+</div>
+
+  <script>
+    const firebaseConfig = {
+    apiKey: "AIzaSyBwBiziQg4q9jOP0vT9Vg11j1yVzoX72gI",
+    authDomain: "frequencia-escolas-iacas.firebaseapp.com",
+    databaseURL: "https://frequencia-escolas-iacas-default-rtdb.firebaseio.com",
+    projectId: "frequencia-escolas-iacas",
+    storageBucket: "frequencia-escolas-iacas.appspot.com",
+    messagingSenderId: "259315364059",
+    appId: "1:259315364059:web:ddc66a60f18c563cc41cfe"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const professores = {
+    "Izys": "iacas1234",
+    "Nayara": "nayara",
+    "Karina": "8770220"
+  };
+
+  const turmasPorEscola = {
+    "CMEI Padre Luís Ruas": ["Turma 1"],
+    "Escola Municipal Nova Vida": ["Turma 1"],
+    "Escola Municipal Liberalina Weill": ["Matutino"],
+    "Escola Estadual Santo Antônio": ["Matutino"],
+    "Adolescentes - Vila da Felicidade": ["Matutino", "Vespertino"],
+    "Crianças - Vila da Felicidade": ["Turma 3", "Turma 4"]
+  };
+
+  let alunos = [];
+  let escolaAtual = "";
+  let turmaAtual = "";
+
+  function login() {
+    const user = document.getElementById('username').value;
+    const pass = document.getElementById('password').value;
+    if (professores[user] && professores[user] === pass) {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('selection').style.display = 'block';
+    } else {
+      alert("Login inválido!");
+    }
+  }
+
+  function loadTurmas() {
+    const escola = document.getElementById('escola').value;
+    const turmaSelect = document.getElementById('turma');
+    turmaSelect.innerHTML = '<option value="">Selecione a turma</option>';
+    if (turmasPorEscola[escola]) {
+      turmasPorEscola[escola].forEach(turma => {
+        const opt = document.createElement('option');
+        opt.value = turma;
+        opt.innerText = turma;
+        turmaSelect.appendChild(opt);
+      });
+    }
+  }
+
+  function gerarAlunosFixos() {
+    const lista = [];
+    for (let i = 1; i <= 35; i++) {
+      lista.push({
+        nome: `Aluno ${i}`,
+        presente: false,
+        falta: false,
+        ausente: false
+      });
+    }
+    return lista;
+  }
+
+  function abrirChamada() {
+    escolaAtual = document.getElementById('escola').value;
+    turmaAtual = document.getElementById('turma').value;
+    const dataSelecionada = document.getElementById('dataChamada').value;
+
+    if (!escolaAtual || !turmaAtual || !dataSelecionada) {
+      alert("Selecione escola, turma e data!");
+      return;
+    }
+
+    document.getElementById('selection').style.display = 'none';
+    document.getElementById('chamada').style.display = 'block';
+    document.getElementById('escolaSelecionada').innerText = escolaAtual;
+    document.getElementById('turmaSelecionada').innerText = turmaAtual;
+
+    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
+
+    ref.once("value").then(snapshot => {
+      if (snapshot.exists()) {
+        alunos = snapshot.val();
+      } else {
+        alunos = gerarAlunosFixos();
+        ref.set(alunos);
+      }
+      renderTabela();
+    });
+
+    // Atualização em tempo real
+    ref.on("value", snapshot => {
+      if (snapshot.exists()) {
+        alunos = snapshot.val();
+        renderTabela();
+      }
+    });
+  }
+
+  function renderTabela() {
+    const tbody = document.getElementById('tabelaAlunos');
+    tbody.innerHTML = '';
+    alunos.forEach((aluno, index) => {
+      tbody.innerHTML += `
+        <tr>
+            <td>${aluno.nome}</td>
+            <td><input type="checkbox" onchange="marcar(${index}, 'presente')" ${aluno.presente ? 'checked' : ''}></td>
+            <td><input type="checkbox" onchange="marcar(${index}, 'falta')" ${aluno.falta ? 'checked' : ''}></td>
+            <td><input type="checkbox" onchange="marcar(${index}, 'ausente')" ${aluno.ausente ? 'checked' : ''}></td>
+        </tr>`;
+    });
+  }
+
+  function marcar(index, tipo) {
+    alunos[index].presente = false;
+    alunos[index].falta = false;
+    alunos[index].ausente = false;
+    alunos[index][tipo] = true;
+
+    const data = document.getElementById('dataChamada').value;
+    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${data}`);
+    ref.set(alunos);
+  }
+
+  function salvarChamada() {
+    const data = document.getElementById('dataChamada').value;
+    if (!data) {
+      alert("Escolha uma data para salvar.");
+      return;
+    }
+
+    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${data}`);
+    ref.set(alunos)
+      .then(() => alert("Chamada salva com sucesso para " + data))
+      .catch(err => alert("Erro ao salvar: " + err));
+  }
+
+  function exportarExcel() {
+    const data = document.getElementById('dataChamada').value;
+    if (!data) {
+      alert("Escolha uma data antes de exportar.");
+      return;
+    }
+
+    if (alunos.length === 0) {
+      alert("Nenhum aluno carregado!");
+      return;
+    }
+
+    const ws_data = [
+      ["Escola", escolaAtual],
+      ["Turma", turmaAtual],
+      ["Data", data],
+      [],
+      ["Nome", "Presente", "Falta", "Ausente Justificado"]
+    ];
+
+    alunos.forEach(aluno => {
+      ws_data.push([
+        aluno.nome,
+        aluno.presente ? "✔️" : "",
+        aluno.falta ? "✔️" : "",
+        aluno.ausente ? "✔️" : ""
+      ]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    XLSX.utils.book_append_sheet(wb, ws, "Chamada");
+    XLSX.writeFile(wb, `Chamada_${escolaAtual}_${turmaAtual}_${data}.xlsx`);
+  }
+
+  function voltarParaSelecao() {
+    document.getElementById('chamada').style.display = 'none';
+    document.getElementById('selection').style.display = 'block';
+  }
+  </script>
+</body>
+</html>
