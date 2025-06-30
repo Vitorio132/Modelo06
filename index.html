@@ -4,13 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Chamadas - IACAS</title>
-
 <style>
   body {
     font-family: Arial, sans-serif;
     background: #f2f2f2;
   }
-  #login, #selection, #chamada {
+  #login, #selection, #chamada, #exportacaoMensal {
     max-width: 600px;
     margin: 30px auto;
     background: white;
@@ -113,6 +112,20 @@
   </table>
   <button onclick="salvarChamada()">Salvar Chamada</button>
   <button onclick="exportarParaExcel()">Exportar para Excel</button>
+  <button onclick="abrirExportacaoMensal()">Exportação Mensal</button>
+  <button onclick="voltarParaSelecao()">Voltar</button>
+</div>
+
+<div id="exportacaoMensal" style="display:none;">
+  <h2>Exportação Mensal</h2>
+  <select id="escolaExport">
+    <option value="">Selecione a escola</option>
+  </select>
+  <select id="turmaExport">
+    <option value="">Selecione a turma</option>
+  </select>
+  <input type="month" id="mesExport" />
+  <button onclick="exportarMensal()">Exportar Excel Mensal</button>
   <button onclick="voltarParaSelecao()">Voltar</button>
 </div>
 
@@ -120,7 +133,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
-<!-- SheetJS for Excel Export -->
+<!-- SheetJS para exportação Excel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
@@ -211,7 +224,6 @@
     document.getElementById("turmaSelecionada").innerText = turmaAtual;
 
     const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
-
     ref.once("value").then((snapshot) => {
       if (snapshot.exists()) {
         alunos = snapshot.val();
@@ -257,68 +269,21 @@
   function editarNome(index) {
     const nomeAtual = alunos[index].nome;
     const novoNome = prompt("Editar nome do aluno:", nomeAtual);
-    if (novoNome === null) return;
-    if (!novoNome.trim()) {
-      alert("O nome não pode ficar vazio!");
-      return;
+    if (novoNome && novoNome.trim() !== "") {
+      alunos[index].nome = novoNome.trim();
+      renderTabela();
     }
-    const nomeAntigo = alunos[index].nome;
-    alunos[index].nome = novoNome.trim();
-    renderTabela();
-
-    const dataSelecionada = document.getElementById("dataChamada").value;
-    const refAtual = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
-    refAtual.set(alunos);
-
-    const refTurma = db.ref(`chamada/${escolaAtual}/${turmaAtual}`);
-    refTurma.once("value").then(snapshot => {
-      const datasFuturas = [];
-      snapshot.forEach(childSnap => {
-        const data = childSnap.key;
-        if (data > dataSelecionada) {
-          datasFuturas.push(data);
-        }
-      });
-      datasFuturas.forEach(data => {
-        const refData = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${data}`);
-        refData.once("value").then(snapshotData => {
-          if (snapshotData.exists()) {
-            const alunosData = snapshotData.val();
-            alunosData.forEach(alunoData => {
-              if (alunoData.nome === nomeAntigo) {
-                alunoData.nome = novoNome.trim();
-              }
-            });
-            refData.set(alunosData);
-          }
-        });
-      });
-    });
   }
 
   function salvarChamada() {
     const dataSelecionada = document.getElementById("dataChamada").value;
-    if (!dataSelecionada) {
-      alert("Selecione uma data para salvar a chamada!");
-      return;
-    }
-    const ref = db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`);
-    ref.set(alunos)
-      .then(() => alert("Chamada salva com sucesso!"))
-      .catch(() => alert("Erro ao salvar a chamada."));
-  }
-
-  function voltarParaSelecao() {
-    document.getElementById("chamada").style.display = "none";
-    document.getElementById("selection").style.display = "block";
+    db.ref(`chamada/${escolaAtual}/${turmaAtual}/${dataSelecionada}`).set(alunos);
+    alert("Chamada salva!");
   }
 
   function exportarParaExcel() {
     const dataSelecionada = document.getElementById("dataChamada").value;
-    const wsData = [
-      ["Nome", "Presente", "Falta", "Ausente Justificado"]
-    ];
-
+    const wsData = [["Nome", "Presente", "Falta", "Ausente Justificado"]];
     alunos.forEach(aluno => {
       wsData.push([
         aluno.nome,
@@ -329,10 +294,117 @@
     });
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 30 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 20 }
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Chamada");
-
     XLSX.writeFile(wb, `Chamada-${escolaAtual}-${turmaAtual}-${dataSelecionada}.xlsx`);
+  }
+
+  function abrirExportacaoMensal() {
+    document.getElementById("chamada").style.display = "none";
+    document.getElementById("exportacaoMensal").style.display = "block";
+
+    // Preencher selects exportação mensal
+    const escolaExport = document.getElementById("escolaExport");
+    escolaExport.innerHTML = '<option value="">Selecione a escola</option>';
+    Object.keys(turmasPorEscola).forEach(escola => {
+      escolaExport.innerHTML += `<option value="${escola}">${escola}</option>`;
+    });
+
+    document.getElementById("turmaExport").innerHTML = '<option value="">Selecione a turma</option>';
+
+    escolaExport.onchange = () => {
+      const escola = escolaExport.value;
+      const turmaExport = document.getElementById("turmaExport");
+      turmaExport.innerHTML = '<option value="">Selecione a turma</option>';
+      if (turmasPorEscola[escola]) {
+        turmasPorEscola[escola].forEach(turma => {
+          turmaExport.innerHTML += `<option value="${turma}">${turma}</option>`;
+        });
+      }
+    };
+  }
+
+  function voltarParaSelecao() {
+    document.getElementById("chamada").style.display = "none";
+    document.getElementById("exportacaoMensal").style.display = "none";
+    document.getElementById("selection").style.display = "block";
+  }
+
+  async function exportarMensal() {
+    const escola = document.getElementById("escolaExport").value;
+    const turma = document.getElementById("turmaExport").value;
+    const mes = document.getElementById("mesExport").value;
+
+    if (!escola || !turma || !mes) {
+      alert("Selecione escola, turma e mês!");
+      return;
+    }
+
+    const ano = mes.split("-")[0];
+    const mesNum = mes.split("-")[1].padStart(2, "0");
+
+    const basePath = `chamada/${escola}/${turma}`;
+    const chamadasRef = db.ref(basePath);
+
+    try {
+      // Obter todas as chamadas da turma no mês selecionado
+      const snapshot = await chamadasRef.once("value");
+      const chamadas = snapshot.val();
+
+      if (!chamadas) {
+        alert("Nenhuma chamada encontrada para essa turma e mês.");
+        return;
+      }
+
+      // Filtrar somente os dias do mês selecionado com dados
+      const datasDoMes = Object.keys(chamadas).filter(data => data.startsWith(`${ano}-${mesNum}-`));
+
+      if (datasDoMes.length === 0) {
+        alert("Nenhuma chamada registrada neste mês.");
+        return;
+      }
+
+      // Criar workbook para o Excel
+      const wb = XLSX.utils.book_new();
+
+      for (const data of datasDoMes) {
+        const alunosData = chamadas[data];
+        const wsData = [["Nome", "Presente", "Falta", "Ausente Justificado"]];
+
+        alunosData.forEach(aluno => {
+          wsData.push([
+            aluno.nome,
+            aluno.presente ? "✔️" : "",
+            aluno.falta ? "❌" : "",
+            aluno.ausente ? "📝" : ""
+          ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [
+          { wch: 30 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 20 }
+        ];
+
+        // Nome da aba com a data (ex: 2025-06-15)
+        XLSX.utils.book_append_sheet(wb, ws, data);
+      }
+
+      const nomeArquivo = `Chamada-Mensal-${escola}-${turma}-${ano}${mesNum}.xlsx`;
+      XLSX.writeFile(wb, nomeArquivo);
+
+    } catch (error) {
+      alert("Erro ao buscar dados para exportação: " + error.message);
+    }
   }
 </script>
 
